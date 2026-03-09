@@ -1,14 +1,18 @@
 package com.example.userservice.services;
 
+import com.example.userservice.dtos.SendEmailDto;
 import com.example.userservice.exceptions.InvalidTokenException;
 import com.example.userservice.exceptions.PasswordMismatchException;
 import com.example.userservice.models.Token;
 import com.example.userservice.models.User;
 import com.example.userservice.repositories.TokenRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import com.example.userservice.repositories.UserRepository;
@@ -23,15 +27,21 @@ public class UserServiceImpl implements UserService {
     private BCryptPasswordEncoder bCryptPasswordEncoder;
     private TokenRepository tokenRepository;
     private SecretKey secretKey;
+    private KafkaTemplate<String, String> kafkaTemplate;
+    private ObjectMapper objectMapper;
 
     public UserServiceImpl(UserRepository userRepository,
                            BCryptPasswordEncoder bCryptPasswordEncoder,
                            TokenRepository tokenRepository,
-                           SecretKey secretKey) {
+                           SecretKey secretKey,
+                           KafkaTemplate<String, String> kafkaTemplate,
+                           ObjectMapper objectMapper) {
         this.userRepository = userRepository;
         this.bCryptPasswordEncoder = bCryptPasswordEncoder;
         this.tokenRepository = tokenRepository;
         this.secretKey = secretKey;
+        this.kafkaTemplate = kafkaTemplate;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -50,7 +60,41 @@ public class UserServiceImpl implements UserService {
         // User BCryptPasswordEncoder to encode the password.
         user.setPassword(bCryptPasswordEncoder.encode(password));
 
-        return userRepository.save(user);
+//        return userRepository.save(user);
+        user = userRepository.save(user);
+
+        //Push a message to kafka to send a Welcome email.
+
+        SendEmailDto emailDto = new SendEmailDto();
+        emailDto.setEmail(email);
+        emailDto.setSubject("Welcome to our Application");
+        emailDto.setBody("Welcome Mr/Mrs "+user.getName()+", Your registration is done.");
+
+//        try {
+//            kafkaTemplate.send(
+//                    "sendWelcomeEmail",
+//                    objectMapper.writeValueAsString(emailDto)
+//            );
+//        } catch (JsonProcessingException e) {
+//            throw new RuntimeException(e);
+//        }
+
+        try {
+
+            String payload = objectMapper.writeValueAsString(emailDto);
+
+            kafkaTemplate
+                    .send("sendWelcomeEmail", payload)
+                    .get();   // BLOCK and wait for Kafka ack
+
+            System.out.println("Kafka message sent successfully");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+
+        return user;
     }
 
     @Override
@@ -118,6 +162,40 @@ public class UserServiceImpl implements UserService {
 //        String token = Jwts.builder().content(payloadBytes).compact();
 
         String jwtToken = Jwts.builder().claims(claims).signWith(secretKey).compact();
+
+
+        // send email for log in as well, if you want to send email for log in, you can uncomment the below code and comment the above code for sending email for sign up, and also change the subject and body of the email accordingly.
+
+        //Push a message to kafka to send a Welcome email.
+
+        SendEmailDto emailDto = new SendEmailDto();
+        emailDto.setEmail(email);
+        emailDto.setSubject("Welcome to our Application");
+        emailDto.setBody("Welcome Mr/Miss "+user.getName()+", Your have logged in successfully.");
+
+//        try {
+//            kafkaTemplate.send(
+//                    "sendWelcomeEmail",
+//                    objectMapper.writeValueAsString(emailDto)
+//            );
+//        } catch (JsonProcessingException e) {
+//            throw new RuntimeException(e);
+//        }
+
+        try {
+
+            String payload = objectMapper.writeValueAsString(emailDto);
+
+            kafkaTemplate
+                    .send("sendWelcomeEmail", payload)
+                    .get();   // BLOCK and wait for Kafka ack
+
+            System.out.println("Kafka message sent successfully");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
 
         //Create a UserSession as well here in order to store more details with the token.
 
