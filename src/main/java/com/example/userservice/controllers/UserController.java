@@ -47,6 +47,11 @@ public class UserController {
         return UserDto.from(user);
     }
 
+    @GetMapping("/sample")
+    public void sampleAPI() {
+        System.out.println("Received a call from ProductService!");
+    }
+
     //TODO
 //    public logOut() {
 //
